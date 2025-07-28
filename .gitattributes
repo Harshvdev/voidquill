@@ -1,0 +1,30 @@
+# Auto-detect text files and normalize line endings to LF in repo
+* text=auto
+
+# Explicitly normalize line endings for common frontend files
+*.js   text
+*.jsx  text
+*.ts   text
+*.tsx  text
+*.json text
+*.html text
+*.css  text
+*.scss text
+*.md   text
+*.yml  text
+*.yaml text
+*.svg  text
+*.xml  text
+
+# Binary files - keep them as-is
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.zip  binary
