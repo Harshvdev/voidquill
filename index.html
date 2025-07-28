@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoidQuill</title>
+    <link rel="stylesheet" href="src/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<canvas id="blackhole-canvas"></canvas>
+
+<!-- Main screen UI -->
+<h1 class="main-title">VoidQuill</h1>
+<div class="main-action">
+    <button id="compose-button" class="btn btn-primary btn-hero">Compose Thought</button>
+</div>
+
+<!-- Modal for writing the post -->
+<div id="compose-modal" class="modal-overlay">
+    <div class="modal-content">
+        <button id="compose-close-button" class="modal-close" aria-label="Close">×</button>
+        <h2>Whisper to the singularity...</h2>
+        <div class="input-area">
+            <textarea
+                id="post-content"
+                rows="6"
+                aria-label="Your message to the void"
+            ></textarea>
+            <div id="feedback-message" class="feedback"></div>
+        </div>
+        <div class="button-group">
+            <button id="release-button" class="btn btn-primary">Release into the Void</button>
+            <button id="listen-button" class="btn btn-secondary">Listen to the Void</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for displaying a post from the void -->
+<div id="post-modal" class="modal-overlay">
+    <div class="modal-content">
+        <button id="modal-close-button" class="modal-close" aria-label="Close modal">×</button>
+        <p class="modal-text"></p>
+    </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+
+</body>
+</html>
