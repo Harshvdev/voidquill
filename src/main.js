@@ -28,20 +28,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let centerX, centerY;
     const eventHorizonRadius = 45;
 
+    // --- PRE-COMPUTED GRADIENTS (MEMORY OPTIMIZATION) ---
+    // Instead of creating a new gradient for every particle, we create them once and reuse them.
+    let dustGradient = null;
+    let thoughtGradient = null;
+
     // --- HELPER FUNCTION ---
-    // Linearly interpolates between two values
     const lerp = (a, b, t) => a * (1 - t) + b * t;
 
     // --- PARTICLE CLASSES ---
 
-    // MODIFIED: This particle now handles its own travel, joining the orbit, and fading color.
     class TransitionParticle {
         constructor(startX, startY) {
-            this.state = 'traveling'; // 'traveling', 'fading'
-            this.travelProgress = 0; // Progress along the curve (0.0 to 1.0)
-            this.fadeProgress = 1.0; // Purple (1.0) to White (0.0)
+            this.state = 'traveling';
+            this.travelProgress = 0;
+            this.fadeProgress = 1.0;
 
-            // Path points for the curve
             this.startX = startX;
             this.startY = startY;
             this.endRadius = centerX * 0.75;
@@ -51,10 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
             this.controlX = this.endX;
             this.controlY = this.startY;
 
-            // Speeds
-            this.travelSpeed = 0.01; // Slower initial travel
-            this.fadeSpeed = 0.01; // Speed of the color fade
-
+            this.travelSpeed = 0.01;
+            this.fadeSpeed = 0.01;
             this.size = 8;
         }
 
@@ -63,21 +63,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.travelProgress += this.travelSpeed;
                 if (this.travelProgress >= 1.0) {
                     this.travelProgress = 1.0;
-                    this.state = 'fading'; // Switch to fading state
-                    // Initialize orbital properties for a seamless transition
+                    this.state = 'fading';
                     this.radius = this.endRadius;
                     this.angle = this.endAngle;
                     this.angularSpeed = 2 / this.radius;
                 }
             } else if (this.state === 'fading') {
-                // Now that it's in orbit, update position like a normal particle
                 this.radius -= 0.4;
                 this.angle += this.angularSpeed;
-
-                // Decrease the fade progress
                 this.fadeProgress -= this.fadeSpeed;
                 if (this.fadeProgress <= 0) {
-                    // Once fully faded, signal to be replaced by a permanent particle
                     return { done: true, radius: this.radius, angle: this.angle };
                 }
             }
@@ -85,7 +80,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         draw() {
-            // Calculate current position based on state
             if (this.state === 'traveling') {
                 const t = this.travelProgress;
                 const t_inv = 1 - t;
@@ -93,20 +87,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 const t_sq = t * t;
                 this.x = t_inv_sq * this.startX + 2 * t_inv * t * this.controlX + t_sq * this.endX;
                 this.y = t_inv_sq * this.startY + 2 * t_inv * t * this.controlY + t_sq * this.endY;
-            } else { // Fading state
+            } else {
                 this.x = centerX + Math.cos(this.angle) * this.radius;
                 this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
             }
 
-            // --- Dynamic Gradient for Fading ---
-            // Color stops for Purple (thought)
             const p_inner = { r: 224, g: 195, b: 255 };
             const p_outer = { r: 157, g: 78, b: 221 };
-            // Color stops for White (dust)
             const w_inner = { r: 255, g: 255, b: 255 };
             const w_outer = { r: 224, g: 195, b: 255 };
-
-            // Interpolate colors based on fade progress
             const t = this.fadeProgress;
             const innerR = lerp(w_inner.r, p_inner.r, t);
             const innerG = lerp(w_inner.g, p_inner.g, t);
@@ -115,14 +104,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const outerG = lerp(w_outer.g, p_outer.g, t);
             const outerB = lerp(w_outer.b, p_outer.b, t);
 
-            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
-            gradient.addColorStop(0, `rgba(${innerR}, ${innerG}, ${innerB}, 1)`);
-            gradient.addColorStop(0.5, `rgba(${outerR}, ${outerG}, ${outerB}, 0.9)`);
-            gradient.addColorStop(1, `rgba(${outerR}, ${outerG}, ${outerB}, 0)`);
+            const dynamicGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
+            dynamicGradient.addColorStop(0, `rgba(${innerR}, ${innerG}, ${innerB}, 1)`);
+            dynamicGradient.addColorStop(0.5, `rgba(${outerR}, ${outerG}, ${outerB}, 0.9)`);
+            dynamicGradient.addColorStop(1, `rgba(${outerR}, ${outerG}, ${outerB}, 0)`);
 
             ctx.save();
             ctx.translate(this.x, this.y);
-            ctx.fillStyle = gradient;
+            ctx.fillStyle = dynamicGradient;
             ctx.beginPath();
             ctx.arc(0, 0, this.size, 0, Math.PI * 2);
             ctx.fill();
@@ -143,12 +132,8 @@ document.addEventListener('DOMContentLoaded', () => {
             this.angularSpeed = 2 / this.radius;
             this.size = this.isUserThought ? 8 : Math.random() * 4 + 2;
 
-            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
-            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            gradient.addColorStop(0.2, 'rgba(224, 195, 255, 0.9)');
-            gradient.addColorStop(0.8, 'rgba(157, 78, 221, 0.3)');
-            gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
-            this.gradient = gradient;
+            // MODIFIED: No longer creates its own gradient. It will use one of the pre-computed ones.
+            this.gradient = this.isUserThought ? thoughtGradient : dustGradient;
 
             this.x = centerX + Math.cos(this.angle) * this.radius;
             this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
@@ -161,7 +146,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         update() {
-            // MODIFIED: Slower inward spiral speed for all particles.
             this.radius -= 0.4;
             this.angle += this.angularSpeed;
             this.x = centerX + Math.cos(this.angle) * this.radius;
@@ -197,6 +181,22 @@ document.addEventListener('DOMContentLoaded', () => {
         canvas.height = window.innerHeight;
         centerX = canvas.width / 2;
         centerY = canvas.height * 0.4;
+
+        // --- Create Gradients Once ---
+        const thoughtSize = 8;
+        thoughtGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, thoughtSize);
+        thoughtGradient.addColorStop(0, '#e0c3ff');
+        thoughtGradient.addColorStop(0.5, '#9D4EDD');
+        thoughtGradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
+
+        const dustSize = 4; // Use an average size for the gradient
+        dustGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, dustSize);
+        dustGradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+        dustGradient.addColorStop(0.2, 'rgba(224, 195, 255, 0.9)');
+        dustGradient.addColorStop(0.8, 'rgba(157, 78, 221, 0.3)');
+        dustGradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
+
+        // --- Create Stars and Particles ---
         stars = [];
         for (let i = 0; i < 300; i++) stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * 1.5, opacity: Math.random() * 0.5 + 0.1 });
         particles = [];
@@ -221,7 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
         transitionParticles.forEach((tp, index) => {
             const result = tp.update();
             if (result.done) {
-                // Replace the finished transition particle with a permanent one
                 particles.push(new Particle(result.radius, result.angle));
                 transitionParticles.splice(index, 1);
             } else {
