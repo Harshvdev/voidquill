@@ -22,75 +22,126 @@ const modalCloseButton = document.getElementById('modal-close-button');
 // --- STATE AND CONFIG ---
 let currentUser = null;
 let particles = [];
+// NEW: An array to hold the temporary traveling particles
+let transitionParticles = [];
 let stars = [];
 const blocklist = ['spamword', 'badword', 'someotherword'];
 let centerX, centerY;
 const eventHorizonRadius = 45;
 
-// --- The Definitive Particle Class ---
-class Particle {
+// NEW CLASS: Based on your example, this particle travels to its orbit
+class TransitionParticle {
     constructor(startX, startY) {
-        // A particle's orbital state is defined by radius and angle
-        // Its visual position is defined by x and y
-        this.x = 0;
-        this.y = 0;
-        this.radius = 0;
-        this.angle = 0;
-        this.angularSpeed = 0;
+        this.x = startX;
+        this.y = startY;
+        
+        // Give it a random destination orbit
+        this.targetRadius = Math.random() * (canvas.width * 0.1) + (canvas.width * 0.25);
+        this.targetAngle = Math.random() * Math.PI * 2;
+        
+        this.size = 8;
+        this.speed = 3; // Adjust for faster/slower travel
+        
+        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
+        gradient.addColorStop(0, '#e0c3ff');
+        gradient.addColorStop(0.5, '#9D4EDD');
+        gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
+        this.gradient = gradient;
+    }
 
-        if (startX && startY) {
-            // This is a handed-off particle. Its visual position starts where the orb was.
-            this.x = startX;
-            this.y = startY;
-            // We then calculate its orbital parameters based on that position.
-            const dx = this.x - centerX;
-            const dy = this.y - centerY;
-            this.radius = Math.sqrt(dx * dx + dy * dy);
-            this.angle = Math.atan2(dy, dx);
-            this.angularSpeed = 2 / this.radius;
-        } else {
-            // This is a standard ambient particle.
+    update() {
+        // Calculate the destination point in its orbit
+        const targetX = centerX + Math.cos(this.targetAngle) * this.targetRadius;
+        const targetY = centerY + Math.sin(this.targetAngle) * this.targetRadius * 0.4;
+
+        const dx = targetX - this.x;
+        const dy = targetY - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // If it's close enough, signal that it's time to convert
+        if (dist < this.speed) {
+            // Return the final parameters for the permanent particle
+            return { done: true, radius: this.targetRadius, angle: this.targetAngle };
+        }
+
+        // Move towards the destination
+        this.x += (dx / dist) * this.speed;
+        this.y += (dy / dist) * this.speed;
+        return { done: false };
+    }
+    
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.fillStyle = this.gradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+// UPDATED CLASS: Particle now takes pre-calculated orbit data
+class Particle {
+    constructor(orbitRadius, orbitAngle) {
+        this.radius = orbitRadius;
+        this.angle = orbitAngle;
+        
+        // Is this a user-generated particle or ambient dust?
+        this.isUserThought = !!orbitRadius;
+
+        if (!this.isUserThought) {
             this.reset();
         }
 
-        this.size = Math.random() * 4 + 2;
+        this.angularSpeed = 2 / this.radius;
+        this.size = this.isUserThought ? 8 : Math.random() * 4 + 2;
+        
+        // Create a distinct gradient for user thoughts
         const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-        gradient.addColorStop(0.2, 'rgba(224, 195, 255, 0.9)');
-        gradient.addColorStop(0.8, 'rgba(157, 78, 221, 0.3)');
-        gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
+        if (this.isUserThought) {
+            gradient.addColorStop(0, '#e0c3ff');
+            gradient.addColorStop(0.5, '#9D4EDD');
+            gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
+        } else {
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            gradient.addColorStop(0.2, 'rgba(224, 195, 255, 0.9)');
+            gradient.addColorStop(0.8, 'rgba(157, 78, 221, 0.3)');
+            gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
+        }
         this.gradient = gradient;
+        
+        // Calculate initial x/y position
+        this.x = centerX + Math.cos(this.angle) * this.radius;
+        this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
     }
 
     reset() {
         this.radius = Math.random() * (canvas.width * 0.5) + (canvas.width * 0.2);
         this.angle = Math.random() * Math.PI * 2;
         this.angularSpeed = 2 / this.radius;
-        // Calculate its initial visual position
-        this.x = centerX + Math.cos(this.angle) * this.radius;
-        this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
     }
 
     update() {
-        // 1. Update the orbital parameters (the "physics")
         this.radius -= 0.7;
         this.angle += this.angularSpeed;
-
-        // 2. Recalculate the visual position based on the new orbital parameters
         this.x = centerX + Math.cos(this.angle) * this.radius;
-        this.y = centerY + Math.sin(this.angle) * this.radius * 0.4; // Elliptical orbit
+        this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
 
         if (this.radius < eventHorizonRadius) {
-            this.reset();
+            if (this.isUserThought) {
+                return false; // User thoughts get consumed
+            } else {
+                this.reset(); // Ambient dust gets recycled
+            }
         }
+        return true;
     }
 
     draw() {
         ctx.save();
-        // The perspective is based on the y-coordinate
         const p = (this.y / canvas.height) * 0.8 + 0.2;
         const displaySize = this.size * p;
-
         ctx.translate(this.x, this.y);
         ctx.scale(displaySize, displaySize);
         ctx.fillStyle = this.gradient;
@@ -101,7 +152,6 @@ class Particle {
     }
 }
 
-
 function setupCanvas() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     centerX = canvas.width / 2; centerY = canvas.height * 0.4;
@@ -110,6 +160,7 @@ function setupCanvas() {
     for (let i = 0; i < particleCount; i++) particles.push(new Particle());
 }
 
+// UPDATED: The main animation loop now manages transition particles
 function animate() {
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = 'rgba(4, 2, 10, 0.25)';
@@ -120,7 +171,22 @@ function animate() {
     });
 
     ctx.globalCompositeOperation = 'lighter';
-    particles.forEach(p => { p.update(); p.draw(); });
+    
+    // Update and draw permanent particles
+    particles = particles.filter(p => p.update());
+    particles.forEach(p => p.draw());
+
+    // Update and draw traveling particles
+    transitionParticles.forEach((tp, index) => {
+        const result = tp.update();
+        if (result.done) {
+            // When done, create a permanent particle and remove the transition one
+            particles.push(new Particle(result.radius, result.angle));
+            transitionParticles.splice(index, 1);
+        } else {
+            tp.draw();
+        }
+    });
 
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = '#000';
@@ -139,7 +205,7 @@ window.addEventListener('resize', setupCanvas);
 const openComposeModal = () => composeModal.classList.add('is-visible');
 const closeComposeModal = () => composeModal.classList.remove('is-visible');
 
-// --- CORE APP LOGIC ---
+// UPDATED: The release logic is now much simpler and more effective
 async function handleReleasePost() {
     const content = postContentEl.value.trim();
     if (!currentUser || content.length === 0 || !isTextClean(content)) {
@@ -150,44 +216,44 @@ async function handleReleasePost() {
     const buttonRect = composeButton.getBoundingClientRect();
     closeComposeModal();
 
+    // Create a temporary DOM element to mark the starting spot
     const animator = document.createElement('div');
     animator.className = 'release-animator';
-    const animatorHeight = 150;
-    const animatorWidth = 350;
-    animator.style.width = `${animatorWidth}px`;
-    animator.style.height = `${animatorHeight}px`;
+    animator.style.width = '350px';
+    animator.style.height = '150px';
     animator.style.left = `50%`;
-    animator.style.top = `${buttonRect.top - animatorHeight - 20}px`;
+    animator.style.top = `${buttonRect.top - 150 - 20}px`;
     animator.textContent = content;
     document.body.appendChild(animator);
 
-    setTimeout(() => animator.classList.add('text-fading'), 100);
-    setTimeout(() => animator.classList.add('morphing-to-orb'), 1100);
-
+    // After a short delay, morph the DOM element and create the canvas particle
     setTimeout(() => {
-        animator.classList.add('pulsing');
-        setTimeout(() => {
-            const finalRect = animator.getBoundingClientRect();
-            const startX = finalRect.left + finalRect.width / 2;
-            const startY = finalRect.top + finalRect.height / 2;
+        // Morph the DOM element into an "orb"
+        animator.style.width = '10px';
+        animator.style.height = '10px';
+        animator.style.borderRadius = '50%';
+        animator.style.color = 'transparent';
+        animator.style.padding = '0';
+        animator.style.background = 'var(--void-purple)';
 
-            animator.classList.remove('pulsing');
-            animator.classList.add('fading-out');
+        // Get its final position
+        const finalRect = animator.getBoundingClientRect();
+        const startX = finalRect.left + finalRect.width / 2;
+        const startY = finalRect.top + finalRect.height / 2;
+        
+        // HANDOFF: Create the new canvas-based traveling particle
+        transitionParticles.push(new TransitionParticle(startX, startY));
+        
+        // Fade out and remove the DOM element
+        animator.style.opacity = '0';
+        setTimeout(() => animator.remove(), 500);
 
-            // The handoff: Create a new particle at the orb's final screen position.
-            particles.push(new Particle(startX, startY));
-
-        }, 1500);
-
-    }, 2100);
-
-    setTimeout(() => {
-        animator.remove();
-    }, 4200);
+    }, 100); // A brief moment to let the user see their text
 
     await savePostToFirebase(content);
     postContentEl.value = '';
 }
+
 
 async function savePostToFirebase(content) {
     try {

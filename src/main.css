@@ -69,7 +69,7 @@ textarea:focus { outline: none; border-color: var(--void-glow); }
 /* --- CSS for the DOM-based Release Animation --- */
 .release-animator {
     position: fixed;
-    z-index: 2000; /* Above everything */
+    z-index: 2000;
     background-color: rgba(10, 2, 20, 0.8);
     border: 1px solid rgba(157, 78, 221, 0.4);
     border-radius: 8px;
@@ -79,45 +79,7 @@ textarea:focus { outline: none; border-color: var(--void-glow); }
     white-space: pre-wrap;
     word-wrap: break-word;
     overflow: hidden;
-    transform: translateX(-50%); /* Crucial for centering with left: 50% */
-    transition: width 1s ease-in-out, height 1s ease-in-out,
-                border-radius 1s ease-in-out, padding 1s ease-in-out,
-                color 0.8s ease, background-color 1s ease-in-out,
-                opacity 0.5s ease-in-out; /* Transition for final fade */
-}
-
-/* 1. Text fades out */
-.release-animator.text-fading {
-    color: transparent;
-    text-shadow: 0 0 8px var(--void-glow);
-}
-
-/* 2. Box morphs into a smaller orb */
-.release-animator.morphing-to-orb {
-    width: 10px !important;   /* Orb is now particle-sized */
-    height: 10px !important;  /* Orb is now particle-sized */
-    border-radius: 50% !important;
-    padding: 0 !important;
-    font-size: 0 !important;
-    border-color: transparent;
-    background: radial-gradient(circle, var(--void-glow), var(--void-purple));
-    box-shadow: 0 0 15px 3px var(--void-purple);
-}
-
-/* 3. Orb pulses */
-.release-animator.pulsing {
-    animation: pulse 1.5s infinite ease-in-out;
-}
-@keyframes pulse {
-    0%, 100% {
-        transform: translateX(-50%) scale(1);
-    }
-    50% {
-        transform: translateX(-50%) scale(1.4);
-    }
-}
-
-/* 4. Orb fades out before handing off to canvas */
-.release-animator.fading-out {
-    opacity: 0;
+    transform: translateX(-50%);
+    /* Shorter, simpler transition as its life is short */
+    transition: all 0.5s ease-in-out;
 }
