@@ -24,52 +24,105 @@ document.addEventListener('DOMContentLoaded', () => {
     let particles = [];
     let transitionParticles = [];
     let stars = [];
-    // NOTE: This client-side blocklist is for basic UX and can be easily bypassed.
-    // A robust solution requires server-side validation (e.g., Cloud Functions).
     const blocklist = ['spamword', 'badword', 'someotherword'];
     let centerX, centerY;
     const eventHorizonRadius = 45;
 
-    // --- PARTICLE CLASSES (UNCHANGED) ---
+    // --- HELPER FUNCTION ---
+    // Linearly interpolates between two values
+    const lerp = (a, b, t) => a * (1 - t) + b * t;
+
+    // --- PARTICLE CLASSES ---
+
+    // MODIFIED: This particle now handles its own travel, joining the orbit, and fading color.
     class TransitionParticle {
         constructor(startX, startY) {
-            this.x = startX;
-            this.y = startY;
+            this.state = 'traveling'; // 'traveling', 'fading'
+            this.travelProgress = 0; // Progress along the curve (0.0 to 1.0)
+            this.fadeProgress = 1.0; // Purple (1.0) to White (0.0)
 
-            this.targetRadius = Math.random() * (canvas.width * 0.1) + (canvas.width * 0.25);
-            this.targetAngle = Math.random() * Math.PI * 2;
+            // Path points for the curve
+            this.startX = startX;
+            this.startY = startY;
+            this.endRadius = centerX * 0.75;
+            this.endAngle = Math.PI;
+            this.endX = centerX + Math.cos(this.endAngle) * this.endRadius;
+            this.endY = centerY + Math.sin(this.endAngle) * this.endRadius * 0.4;
+            this.controlX = this.endX;
+            this.controlY = this.startY;
+
+            // Speeds
+            this.travelSpeed = 0.01; // Slower initial travel
+            this.fadeSpeed = 0.01; // Speed of the color fade
 
             this.size = 8;
-            this.speed = 3;
-
-            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
-            gradient.addColorStop(0, '#e0c3ff');
-            gradient.addColorStop(0.5, '#9D4EDD');
-            gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
-            this.gradient = gradient;
         }
 
         update() {
-            const targetX = centerX + Math.cos(this.targetAngle) * this.targetRadius;
-            const targetY = centerY + Math.sin(this.targetAngle) * this.targetRadius * 0.4;
+            if (this.state === 'traveling') {
+                this.travelProgress += this.travelSpeed;
+                if (this.travelProgress >= 1.0) {
+                    this.travelProgress = 1.0;
+                    this.state = 'fading'; // Switch to fading state
+                    // Initialize orbital properties for a seamless transition
+                    this.radius = this.endRadius;
+                    this.angle = this.endAngle;
+                    this.angularSpeed = 2 / this.radius;
+                }
+            } else if (this.state === 'fading') {
+                // Now that it's in orbit, update position like a normal particle
+                this.radius -= 0.4;
+                this.angle += this.angularSpeed;
 
-            const dx = targetX - this.x;
-            const dy = targetY - this.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist < this.speed) {
-                return { done: true, radius: this.targetRadius, angle: this.targetAngle };
+                // Decrease the fade progress
+                this.fadeProgress -= this.fadeSpeed;
+                if (this.fadeProgress <= 0) {
+                    // Once fully faded, signal to be replaced by a permanent particle
+                    return { done: true, radius: this.radius, angle: this.angle };
+                }
             }
-
-            this.x += (dx / dist) * this.speed;
-            this.y += (dy / dist) * this.speed;
             return { done: false };
         }
 
         draw() {
+            // Calculate current position based on state
+            if (this.state === 'traveling') {
+                const t = this.travelProgress;
+                const t_inv = 1 - t;
+                const t_inv_sq = t_inv * t_inv;
+                const t_sq = t * t;
+                this.x = t_inv_sq * this.startX + 2 * t_inv * t * this.controlX + t_sq * this.endX;
+                this.y = t_inv_sq * this.startY + 2 * t_inv * t * this.controlY + t_sq * this.endY;
+            } else { // Fading state
+                this.x = centerX + Math.cos(this.angle) * this.radius;
+                this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
+            }
+
+            // --- Dynamic Gradient for Fading ---
+            // Color stops for Purple (thought)
+            const p_inner = { r: 224, g: 195, b: 255 };
+            const p_outer = { r: 157, g: 78, b: 221 };
+            // Color stops for White (dust)
+            const w_inner = { r: 255, g: 255, b: 255 };
+            const w_outer = { r: 224, g: 195, b: 255 };
+
+            // Interpolate colors based on fade progress
+            const t = this.fadeProgress;
+            const innerR = lerp(w_inner.r, p_inner.r, t);
+            const innerG = lerp(w_inner.g, p_inner.g, t);
+            const innerB = lerp(w_inner.b, p_inner.b, t);
+            const outerR = lerp(w_outer.r, p_outer.r, t);
+            const outerG = lerp(w_outer.g, p_outer.g, t);
+            const outerB = lerp(w_outer.b, p_outer.b, t);
+
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
+            gradient.addColorStop(0, `rgba(${innerR}, ${innerG}, ${innerB}, 1)`);
+            gradient.addColorStop(0.5, `rgba(${outerR}, ${outerG}, ${outerB}, 0.9)`);
+            gradient.addColorStop(1, `rgba(${outerR}, ${outerG}, ${outerB}, 0)`);
+
             ctx.save();
             ctx.translate(this.x, this.y);
-            ctx.fillStyle = this.gradient;
+            ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(0, 0, this.size, 0, Math.PI * 2);
             ctx.fill();
@@ -91,16 +144,10 @@ document.addEventListener('DOMContentLoaded', () => {
             this.size = this.isUserThought ? 8 : Math.random() * 4 + 2;
 
             const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
-            if (this.isUserThought) {
-                gradient.addColorStop(0, '#e0c3ff');
-                gradient.addColorStop(0.5, '#9D4EDD');
-                gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
-            } else {
-                gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-                gradient.addColorStop(0.2, 'rgba(224, 195, 255, 0.9)');
-                gradient.addColorStop(0.8, 'rgba(157, 78, 221, 0.3)');
-                gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
-            }
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            gradient.addColorStop(0.2, 'rgba(224, 195, 255, 0.9)');
+            gradient.addColorStop(0.8, 'rgba(157, 78, 221, 0.3)');
+            gradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
             this.gradient = gradient;
 
             this.x = centerX + Math.cos(this.angle) * this.radius;
@@ -114,7 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         update() {
-            this.radius -= 0.7;
+            // MODIFIED: Slower inward spiral speed for all particles.
+            this.radius -= 0.4;
             this.angle += this.angularSpeed;
             this.x = centerX + Math.cos(this.angle) * this.radius;
             this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
@@ -161,7 +209,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.fillStyle = 'rgba(4, 2, 10, 0.25)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         stars.forEach(star => {
-            // FIX: Corrected template literal syntax for rgba color string.
             ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`;
             ctx.fillRect(star.x, star.y, star.size, star.size);
         });
@@ -174,6 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         transitionParticles.forEach((tp, index) => {
             const result = tp.update();
             if (result.done) {
+                // Replace the finished transition particle with a permanent one
                 particles.push(new Particle(result.radius, result.angle));
                 transitionParticles.splice(index, 1);
             } else {
@@ -213,7 +261,6 @@ document.addEventListener('DOMContentLoaded', () => {
         releaseButtonEl.textContent = 'Releasing...';
 
         try {
-            // This animation runs optimistically. The `catch` block will handle DB errors.
             const buttonRect = composeButton.getBoundingClientRect();
             closeComposeModal();
 
@@ -221,7 +268,6 @@ document.addEventListener('DOMContentLoaded', () => {
             animator.className = 'release-animator';
             animator.style.width = '350px';
             animator.style.height = '150px';
-            // FIX: Corrected JS syntax for style properties.
             animator.style.left = '50%';
             animator.style.top = `${buttonRect.top - 150 - 20}px`;
             animator.textContent = content;
@@ -268,12 +314,10 @@ document.addEventListener('DOMContentLoaded', () => {
             await batch.commit();
         } catch (error) {
             console.error("Firestore Write Error: ", error);
-            // FIX: Propagate the error to be handled by the calling function.
             throw error;
         }
     }
 
-    // FIX: Implemented the missing function to listen to the void.
     async function handleListenToVoid() {
         if (!currentUser) return;
 
@@ -282,10 +326,8 @@ document.addEventListener('DOMContentLoaded', () => {
         modalTextEl.textContent = 'The void is vast...';
 
         try {
-            // This method fetches a document at a random starting point,
-            // excluding the current user's own posts.
             const postsRef = collection(db, 'public_posts');
-            const randomId = doc(postsRef).id; // Firestore random ID for a query starting point
+            const randomId = doc(postsRef).id;
 
             let q = query(
                 postsRef,
@@ -296,7 +338,6 @@ document.addEventListener('DOMContentLoaded', () => {
             let querySnapshot = await getDocs(q);
 
             if (querySnapshot.empty) {
-                // If nothing is found, wrap around and search from the beginning.
                 q = query(
                     postsRef,
                     where('authorId', '!=', currentUser.uid),
@@ -336,7 +377,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- HELPER FUNCTIONS ---
     function showFeedback(message, type) {
         feedbackMessageEl.textContent = message;
-        // FIX: Corrected template literal syntax for setting className.
         feedbackMessageEl.className = `feedback ${type}`;
         setTimeout(() => {
             feedbackMessageEl.textContent = '';
@@ -350,7 +390,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- AUTHENTICATION ---
-    // FIX: Disable buttons by default to prevent race conditions before auth completes.
     composeButton.disabled = true;
     listenButtonEl.disabled = true;
 
