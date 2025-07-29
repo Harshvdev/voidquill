@@ -12,7 +12,12 @@
 <body>
 
 <div id="app-container">
-    <canvas id="blackhole-canvas"></canvas>
+    <!-- ACCESSIBILITY FIX: Describe the decorative canvas to screen readers -->
+    <canvas 
+        id="blackhole-canvas" 
+        role="img" 
+        aria-label="An abstract animation of white and purple particles spiraling into a central black hole.">
+    </canvas>
 
     <!-- Main screen UI -->
     <h1 class="main-title">VoidQuill</h1>
@@ -33,7 +38,6 @@
                 rows="6"
                 aria-label="Your message to the void"
             ></textarea>
-            <!-- ACCESSIBILITY FIX: aria-live tells screen readers to announce changes -->
             <div id="feedback-message" class="feedback" aria-live="assertive"></div>
         </div>
         <div class="button-group">
@@ -51,7 +55,6 @@
     </div>
 </div>
 
-<!-- MODULARIZATION FIX: Point to the new main entry script -->
 <script type="module" src="src/main.js"></script>
 
 </body>
