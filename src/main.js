@@ -1,22 +1,31 @@
 // src/main.js
 
 import { db, auth, serverTimestamp, signInAnonymously, onAuthStateChanged } from '../firebase/config.js';
-// FIX: Import 'setDoc' for the second, separate write operation.
 import { collection, doc, writeBatch, query, where, limit, getDocs, documentId, setDoc } from "firebase/firestore";
 
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- CONFIGURATION ---
     const CONFIG = {
+        // Behavior - Ensure these match your Firebase Rules
         POST_COOLDOWN_SECONDS: 60,
         POST_MAX_LENGTH: 1000,
         BLOCKLIST: ['spamword', 'badword', 'someotherword'],
+
+        // FIX: Animation performance is improved by reducing particle counts.
+        // These values provide a good visual experience on a wider range of devices.
+        PARTICLE_COUNT: 300,
+        STAR_COUNT: 150,
+
+        // Visuals
         CANVAS_VERTICAL_CENTER_RATIO: 0.4,
-        PARTICLE_COUNT: 600,
-        STAR_COUNT: 300,
         EVENT_HORIZON_RADIUS: 45,
         RELEASE_ANIMATION_DURATION_MS: 600,
-        LISTEN_QUERY_LIMIT: 10
+
+        // API & UX
+        LISTEN_QUERY_LIMIT: 10,
+        // FIX: The number of recent posts to remember to avoid repetition.
+        SEEN_POSTS_HISTORY_LENGTH: 10
     };
 
     // --- ELEMENT REFERENCES ---
@@ -170,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- CANVAS & ANIMATION (No Changes) ---
+    // --- CANVAS & ANIMATION ---
     function setupCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
@@ -318,19 +327,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // FIX: This function is rewritten to solve the "Missing permissions" error.
     async function savePostToFirebase(content) {
         if (!currentUser) throw new Error("User not authenticated.");
 
-        // The security rules for creating a post need to READ the user_activity document
-        // to check the cooldown. Firestore does not allow a document to be read and written
-        // in the same transaction (batch).
-        //
-        // THE FIX is to separate the operations:
-        // 1. Write the new post in a batch. The rules will read the user_activity doc, which is fine.
-        // 2. AFTER the post is created, perform a SECOND, separate write to update the user_activity doc.
-
-        // --- OPERATION 1: Create the new post ---
         const postBatch = writeBatch(db);
         const postRef = doc(collection(db, 'public_posts'));
         const contentWords = content.toLowerCase().split(/\s+/).filter(Boolean);
@@ -341,20 +340,15 @@ document.addEventListener('DOMContentLoaded', () => {
             createdAt: serverTimestamp(),
             content_words: contentWords
         });
-
-        // This 'await' will throw the permission error if the cooldown rule fails.
-        // This part is now valid because it's only writing the post, not the activity doc.
         await postBatch.commit();
 
-        // --- OPERATION 2: Update the user's last post timestamp ---
-        // This is a separate write operation that runs only if the post creation was successful.
         const userActivityRef = doc(db, 'user_activity', currentUser.uid);
-        // We use setDoc here to create the document if it's the user's first time posting.
         await setDoc(userActivityRef, {
             lastPostTimestamp: serverTimestamp()
         });
     }
 
+    // FIX: This function is completely rewritten to prevent listening to the same post twice.
     async function handleListenToVoid() {
         if (!currentUser) return;
 
@@ -364,37 +358,63 @@ document.addEventListener('DOMContentLoaded', () => {
         openListenModal();
 
         try {
+            // Get the list of already seen post IDs from the browser's local storage.
+            const seenIds = JSON.parse(localStorage.getItem('voidquill_seen_posts')) || [];
+
             const postsRef = collection(db, 'public_posts');
             const randomId = doc(postsRef).id;
-            let foundPostContent = null;
+            let foundPostDoc = null;
 
+            // Helper to find a post using a given query. Now returns the full document.
             const findPost = async (q) => {
                 const snapshot = await getDocs(q);
                 if (!snapshot.empty) {
                     const randomIndex = Math.floor(Math.random() * snapshot.docs.length);
-                    return snapshot.docs[randomIndex].data().content;
+                    return snapshot.docs[randomIndex];
                 }
                 return null;
             };
+            
+            // Base queries now filter out posts by the current user AND posts they have already seen.
+            const queryConstraints = [
+                where('authorId', '!=', currentUser.uid)
+            ];
+            if (seenIds.length > 0) {
+                queryConstraints.push(where(documentId(), 'not-in', seenIds));
+            }
 
+            // Query 1: Look for posts with an ID >= our random ID.
             const q1 = query(postsRef,
-                where('authorId', '!=', currentUser.uid),
+                ...queryConstraints,
                 where(documentId(), '>=', randomId),
                 limit(CONFIG.LISTEN_QUERY_LIMIT)
             );
-            foundPostContent = await findPost(q1);
+            foundPostDoc = await findPost(q1);
 
-            if (!foundPostContent) {
+            // Query 2 (Fallback): If no post was found, search backwards from the random ID.
+            if (!foundPostDoc) {
                 const q2 = query(postsRef,
-                    where('authorId', '!=', currentUser.uid),
+                    ...queryConstraints,
                     where(documentId(), '<', randomId),
                     limit(CONFIG.LISTEN_QUERY_LIMIT)
                 );
-                foundPostContent = await findPost(q2);
+                foundPostDoc = await findPost(q2);
             }
 
-            if (foundPostContent) {
+            if (foundPostDoc) {
+                const foundPostContent = foundPostDoc.data().content;
+                const foundPostId = foundPostDoc.id;
                 modalTextEl.textContent = foundPostContent;
+
+                // Add the ID of the new post to our seen list.
+                seenIds.push(foundPostId);
+                // Keep the list from growing too large by removing the oldest entry.
+                while (seenIds.length > CONFIG.SEEN_POSTS_HISTORY_LENGTH) {
+                    seenIds.shift();
+                }
+                // Save the updated list back to local storage.
+                localStorage.setItem('voidquill_seen_posts', JSON.stringify(seenIds));
+
             } else {
                 modalTextEl.textContent = "The void is silent. No other thoughts were found.";
             }

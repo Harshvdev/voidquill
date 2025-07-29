@@ -97,6 +97,50 @@ textarea:focus { outline: none; border-color: var(--void-glow); }
     word-wrap: break-word;
     overflow: hidden;
     transform-origin: center center;
-    /* ANIMATION FIX: Animate all properties for a smooth shrink effect. */
+    /* FIX: Transition 'all' properties to ensure the shrink animation is smooth */
     transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* --- Responsive Adjustments for Mobile Devices --- */
+@media (max-width: 768px) {
+
+    .main-title {
+        font-size: 2rem;
+        padding: 1.5rem;
+    }
+
+    .main-action {
+        width: 100%;
+        left: 0;
+        transform: none;
+
+        /*
+        -- THE REAL FIX IS HERE --
+        We are significantly increasing the space from the bottom.
+        Using 5vh means 5% of the screen's total height, which creates
+        a much more comfortable and visible margin.
+        */
+        bottom: 20vh;
+
+        padding: 0 1rem;
+        justify-content: center;
+        gap: 1rem;
+    }
+
+    .btn-hero {
+        padding: 0.9rem 1.25rem;
+        font-size: 1rem;
+    }
+
+    .modal-content {
+        padding: 1.5rem;
+    }
+
+    .modal-content h2 {
+        margin-bottom: 1rem;
+    }
+
+    .modal-text {
+        font-size: 1.1rem;
+    }
 }
