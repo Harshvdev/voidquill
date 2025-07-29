@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- CONFIGURATION ---
     const CONFIG = {
-        POST_COOLDOWN_SECONDS: 120,
+        POST_COOLDOWN_SECONDS: 60,
         POST_MAX_LENGTH: 1000,
         BLOCKLIST: ['spamword', 'badword', 'someotherword'],
         CANVAS_VERTICAL_CENTER_RATIO: 0.4,
@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
         STAR_COUNT: 150,
         EVENT_HORIZON_RADIUS: 45,
         RELEASE_ANIMATION_DURATION_MS: 600,
-        LISTEN_QUERY_LIMIT: 10,
+        LISTEN_QUERY_LIMIT: 15,
         SEEN_POSTS_HISTORY_LENGTH: 10
     };
 
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- STATE AND CONFIG ---
     let currentUser = null;
-    let isCurrentUserAdmin = false; // Flag to track admin status
+    let isCurrentUserAdmin = false;
     let particles = [];
     let transitionParticles = [];
     let stars = [];
@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let cooldownEndTime = 0;
     let dustGradient = null;
     let thoughtGradient = null;
+    let elementToFocusOnClose = null; // For accessibility
 
     // --- HELPER FUNCTION ---
     const lerp = (a, b, t) => a * (1 - t) + b * t;
@@ -173,7 +174,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateCooldownDisplay() {
         const now = Date.now();
         const secondsLeft = Math.ceil((cooldownEndTime - now) / 1000);
-        // Only show cooldown if the user is NOT an admin
         if (secondsLeft > 0 && !isCurrentUserAdmin) {
             releaseButtonEl.disabled = true;
             releaseButtonEl.textContent = `On Cooldown (${secondsLeft}s)`;
@@ -187,7 +187,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     function startCooldown() {
-        // Admins skip the client-side cooldown entirely
         if (isCurrentUserAdmin) {
             return;
         }
@@ -197,14 +196,61 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCooldownDisplay();
     }
 
-    // --- MODAL CONTROLS ---
-    const openComposeModal = () => {
-        composeModal.classList.add('is-visible');
-        updateCooldownDisplay(); // This will now correctly handle admins
+    // --- ACCESSIBILITY: FOCUS TRAPPING FOR MODALS ---
+    const trapFocus = (e) => {
+        if (e.key !== 'Tab') return;
+
+        const modal = e.currentTarget;
+        const focusableElements = Array.from(
+            modal.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            )
+        ).filter(el => el.offsetParent !== null); // Ensure element is visible
+        
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey) { // Shift + Tab
+            if (document.activeElement === firstElement) {
+                lastElement.focus();
+                e.preventDefault();
+            }
+        } else { // Tab
+            if (document.activeElement === lastElement) {
+                firstElement.focus();
+                e.preventDefault();
+            }
+        }
     };
-    const closeComposeModal = () => composeModal.classList.remove('is-visible');
-    const openListenModal = () => postModal.classList.add('is-visible');
-    const closeListenModal = () => postModal.classList.remove('is-visible');
+
+    // --- MODAL CONTROLS (WITH ACCESSIBILITY) ---
+    const openComposeModal = () => {
+        elementToFocusOnClose = document.activeElement; // Save current focus
+        composeModal.classList.add('is-visible');
+        composeModal.addEventListener('keydown', trapFocus);
+        postContentEl.focus(); // Set focus on the textarea
+        updateCooldownDisplay();
+    };
+
+    const closeComposeModal = () => {
+        composeModal.classList.remove('is-visible');
+        composeModal.removeEventListener('keydown', trapFocus);
+        if (elementToFocusOnClose) elementToFocusOnClose.focus(); // Restore focus
+    };
+
+    const openListenModal = () => {
+        elementToFocusOnClose = document.activeElement;
+        postModal.classList.add('is-visible');
+        postModal.addEventListener('keydown', trapFocus);
+        modalCloseButton.focus(); // Set focus on the close button
+    };
+
+    const closeListenModal = () => {
+        postModal.classList.remove('is-visible');
+        postModal.removeEventListener('keydown', trapFocus);
+        if (elementToFocusOnClose) elementToFocusOnClose.focus();
+    };
+
 
     // --- CORE APP LOGIC ---
     async function handleReleasePost() {
@@ -280,8 +326,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const seenIds = JSON.parse(localStorage.getItem('voidquill_seen_posts')) || [];
             let foundPostDoc = null;
-            const findUnseenPost = async (q) => {
-                const snapshot = await getDocs(q);
+            
+            const findUnseenPost = (snapshot) => {
                 if (snapshot.empty) return null;
                 const unseenDocs = snapshot.docs.filter(doc => !seenIds.includes(doc.id));
                 if (unseenDocs.length > 0) {
@@ -290,22 +336,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return null;
             };
+
             const postsRef = collection(db, 'public_posts');
             const randomId = doc(postsRef).id;
+
             const q1 = query(postsRef,
                 where('authorId', '!=', currentUser.uid),
                 where(documentId(), '>=', randomId),
                 limit(CONFIG.LISTEN_QUERY_LIMIT)
             );
-            foundPostDoc = await findUnseenPost(q1);
+            const snapshot1 = await getDocs(q1);
+            foundPostDoc = findUnseenPost(snapshot1);
+
             if (!foundPostDoc) {
                 const q2 = query(postsRef,
                     where('authorId', '!=', currentUser.uid),
                     where(documentId(), '<', randomId),
                     limit(CONFIG.LISTEN_QUERY_LIMIT)
                 );
-                foundPostDoc = await findUnseenPost(q2);
+                const snapshot2 = await getDocs(q2);
+                foundPostDoc = findUnseenPost(snapshot2);
             }
+
             if (foundPostDoc) {
                 const foundPostContent = foundPostDoc.data().content;
                 const foundPostId = foundPostDoc.id;
@@ -360,32 +412,31 @@ document.addEventListener('DOMContentLoaded', () => {
         return !blocklist.some(word => lowerCaseText.includes(word));
     }
 
-    // --- AUTHENTICATION (ADMIN AWARE) ---
+    // --- AUTHENTICATION (WITH LOADING STATE) ---
     composeButton.disabled = true;
     listenButtonEl.disabled = true;
+    composeButton.textContent = "Connecting..."; // Initial loading state
 
     onAuthStateChanged(auth, (user) => {
         if (user) {
             currentUser = user;
-            // Check for the admin custom claim on the user's ID token.
-            // Using getIdTokenResult(true) forces a refresh to get the latest claims.
             user.getIdTokenResult(true).then((idTokenResult) => {
-                // Set our global admin flag. The '!!' converts the result to a boolean.
                 isCurrentUserAdmin = !!idTokenResult.claims.admin;
 
                 if (isCurrentUserAdmin) {
                     console.log("Admin user detected. UI cooldown will be disabled.");
                 }
 
-                // Enable the main buttons only after we've confirmed the user's status.
                 composeButton.disabled = false;
                 listenButtonEl.disabled = false;
+                composeButton.textContent = "Compose Thought"; // Restore text on success
             });
         } else {
             currentUser = null;
-            isCurrentUserAdmin = false; // Reset admin flag on logout
+            isCurrentUserAdmin = false;
             composeButton.disabled = true;
             listenButtonEl.disabled = true;
+            composeButton.textContent = "Compose Thought"; // Restore text on logout/failure
             signInAnonymously(auth).catch((error) => {
                 console.error("Anonymous authentication failed", error);
                 document.querySelector('.main-title').textContent = 'Connection Lost';
