@@ -16,7 +16,11 @@ document.addEventListener('DOMContentLoaded', () => {
         EVENT_HORIZON_RADIUS: 45,
         RELEASE_ANIMATION_DURATION_MS: 600,
         LISTEN_QUERY_LIMIT: 15,
-        SEEN_POSTS_HISTORY_LENGTH: 10
+        SEEN_POSTS_HISTORY_LENGTH: 10,
+        // FIX: Centralize "magic numbers" for animator positioning
+        ANIMATOR_HEIGHT: 150,
+        ANIMATOR_SPACING: 20,
+        CONNECTION_TIMEOUT_MS: 15000,
     };
 
     // --- ELEMENT REFERENCES ---
@@ -48,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let dustGradient = null;
     let thoughtGradient = null;
     let elementToFocusOnClose = null; // For accessibility
+    // FIX: State for motion sensitivity
+    let prefersReducedMotion = false;
 
     // --- HELPER FUNCTION ---
     const lerp = (a, b, t) => a * (1 - t) + b * t;
@@ -99,20 +105,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     class Particle {
         constructor(orbitRadius, orbitAngle) {
+            const speedMultiplier = prefersReducedMotion ? 0.1 : 1;
             this.radius = orbitRadius; this.angle = orbitAngle; this.isUserThought = !!orbitRadius;
-            if (!this.isUserThought) { this.reset(); }
-            this.angularSpeed = 2 / this.radius;
+            if (!this.isUserThought) { this.reset(speedMultiplier); }
+            this.angularSpeed = (2 / this.radius) * speedMultiplier;
+            this.speed = 0.4 * speedMultiplier;
             this.size = this.isUserThought ? 8 : Math.random() * 4 + 2;
             this.gradient = this.isUserThought ? thoughtGradient : dustGradient;
             this.x = centerX + Math.cos(this.angle) * this.radius;
             this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
         }
-        reset() {
+        reset(speedMultiplier = 1) {
             this.radius = Math.random() * (canvas.width * 0.5) + (canvas.width * 0.2);
-            this.angle = Math.random() * Math.PI * 2; this.angularSpeed = 2 / this.radius;
+            this.angle = Math.random() * Math.PI * 2;
+            this.angularSpeed = (2 / this.radius) * speedMultiplier;
         }
         update() {
-            this.radius -= 0.4; this.angle += this.angularSpeed;
+            this.radius -= this.speed; this.angle += this.angularSpeed;
             this.x = centerX + Math.cos(this.angle) * this.radius;
             this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
             if (this.radius < eventHorizonRadius) {
@@ -130,6 +139,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- CANVAS & ANIMATION ---
     function setupCanvas() {
+        // FIX: Check for prefers-reduced-motion
+        prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (prefersReducedMotion) {
+            console.log("Reduced motion is enabled. Simplifying animations.");
+            CONFIG.PARTICLE_COUNT /= 4; // Use fewer particles
+            CONFIG.STAR_COUNT /= 2;
+        }
+
         canvas.width = window.innerWidth; canvas.height = window.innerHeight;
         centerX = canvas.width / 2; centerY = canvas.height * CONFIG.CANVAS_VERTICAL_CENTER_RATIO;
         const thoughtSize = 8;
@@ -147,21 +164,48 @@ document.addEventListener('DOMContentLoaded', () => {
         particles = [];
         for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) particles.push(new Particle());
     }
+
     function animate() {
-        ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = 'rgba(4, 2, 10, 0.25)';
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = 'rgba(4, 2, 10, 0.25)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        stars.forEach(star => { ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`; ctx.fillRect(star.x, star.y, star.size, star.size); });
-        ctx.globalCompositeOperation = 'lighter';
-        particles = particles.filter(p => p.update()); particles.forEach(p => p.draw());
-        transitionParticles.forEach((tp, index) => {
+
+        stars.forEach(star => {
+            ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`;
+            ctx.fillRect(star.x, star.y, star.size, star.size);
+        });
+
+        // FIX: Disable intense glow effect if motion is reduced
+        if (!prefersReducedMotion) {
+            ctx.globalCompositeOperation = 'lighter';
+        }
+        
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            if (!p.update()) {
+                particles.splice(i, 1);
+            } else {
+                p.draw();
+            }
+        }
+
+        for (let i = transitionParticles.length - 1; i >= 0; i--) {
+            const tp = transitionParticles[i];
             const result = tp.update();
             if (result.done) {
                 particles.push(new Particle(result.radius, result.angle));
-                transitionParticles.splice(index, 1);
-            } else { tp.draw(); }
-        });
-        ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.arc(centerX, centerY, eventHorizonRadius, 0, Math.PI * 2); ctx.fill();
+                transitionParticles.splice(i, 1);
+            } else {
+                tp.draw();
+            }
+        }
+
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, eventHorizonRadius, 0, Math.PI * 2);
+        ctx.fill();
+
         requestAnimationFrame(animate);
     }
 
@@ -205,17 +249,17 @@ document.addEventListener('DOMContentLoaded', () => {
             modal.querySelectorAll(
                 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
             )
-        ).filter(el => el.offsetParent !== null); // Ensure element is visible
+        ).filter(el => el.offsetParent !== null); 
         
         const firstElement = focusableElements[0];
         const lastElement = focusableElements[focusableElements.length - 1];
 
-        if (e.shiftKey) { // Shift + Tab
+        if (e.shiftKey) { 
             if (document.activeElement === firstElement) {
                 lastElement.focus();
                 e.preventDefault();
             }
-        } else { // Tab
+        } else { 
             if (document.activeElement === lastElement) {
                 firstElement.focus();
                 e.preventDefault();
@@ -225,24 +269,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- MODAL CONTROLS (WITH ACCESSIBILITY) ---
     const openComposeModal = () => {
-        elementToFocusOnClose = document.activeElement; // Save current focus
+        elementToFocusOnClose = document.activeElement; 
         composeModal.classList.add('is-visible');
         composeModal.addEventListener('keydown', trapFocus);
-        postContentEl.focus(); // Set focus on the textarea
+        postContentEl.focus();
         updateCooldownDisplay();
     };
 
     const closeComposeModal = () => {
         composeModal.classList.remove('is-visible');
         composeModal.removeEventListener('keydown', trapFocus);
-        if (elementToFocusOnClose) elementToFocusOnClose.focus(); // Restore focus
+        if (elementToFocusOnClose) elementToFocusOnClose.focus();
     };
 
     const openListenModal = () => {
         elementToFocusOnClose = document.activeElement;
         postModal.classList.add('is-visible');
         postModal.addEventListener('keydown', trapFocus);
-        modalCloseButton.focus(); // Set focus on the close button
+        modalCloseButton.focus();
     };
 
     const closeListenModal = () => {
@@ -269,10 +313,15 @@ document.addEventListener('DOMContentLoaded', () => {
             closeComposeModal();
             const animator = document.createElement('div');
             animator.className = 'release-animator';
-            animator.style.width = '350px'; animator.style.height = '150px';
-            animator.style.left = '50%'; animator.style.top = `${actionRect.top - 150 - 20}px`;
+            // FIX: Use CONFIG values for positioning and styling
+            animator.style.width = '350px'; // CSS handles max-width
+            animator.style.height = `${CONFIG.ANIMATOR_HEIGHT}px`;
+            animator.style.left = '50%';
+            animator.style.top = `${actionRect.top - CONFIG.ANIMATOR_HEIGHT - CONFIG.ANIMATOR_SPACING}px`;
             animator.style.transform = 'translateX(-50%)';
-            animator.textContent = content; document.body.appendChild(animator);
+            animator.textContent = content;
+            document.body.appendChild(animator);
+
             setTimeout(() => {
                 animator.style.width = '10px'; animator.style.height = '10px'; animator.style.borderRadius = '50%';
                 animator.style.color = 'transparent'; animator.style.padding = '0';
@@ -290,11 +339,10 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Failed to release thought:", error);
             if (error.code === 'permission-denied') {
                 showFeedback('You are posting too frequently. Please wait.', 'error');
-                startCooldown(); // This will also update the button state
+                startCooldown(); 
             } else {
                 showFeedback('Your thought was lost in the ether. Please try again.', 'error');
             }
-            // FIX: Always reset button state on error.
             updateCooldownDisplay();
         }
     }
@@ -302,10 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function savePostToFirebase(content) {
         if (!currentUser) throw new Error("User not authenticated.");
 
-        // FIX: Use a single atomic batch to prevent race conditions.
         const postBatch = writeBatch(db);
-
-        // 1. Define the new post document.
         const postRef = doc(collection(db, 'public_posts'));
         const contentWords = content.toLowerCase().split(/\s+/).filter(Boolean);
         postBatch.set(postRef, {
@@ -315,13 +360,11 @@ document.addEventListener('DOMContentLoaded', () => {
             content_words: contentWords
         });
 
-        // 2. Define the user activity update.
         const userActivityRef = doc(db, 'user_activity', currentUser.uid);
         postBatch.set(userActivityRef, {
             lastPostTimestamp: serverTimestamp()
         }, { merge: true });
 
-        // 3. Commit both writes atomically.
         await postBatch.commit();
     }
 
@@ -335,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const seenIds = JSON.parse(localStorage.getItem('voidquill_seen_posts')) || [];
             const postsRef = collection(db, 'public_posts');
-            const MAX_ATTEMPTS = 5; // Try multiple times to find a unique post.
+            const MAX_ATTEMPTS = 5;
             let foundPostDoc = null;
 
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -414,12 +457,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- AUTHENTICATION (WITH LOADING STATE) ---
+    let authTimeout = null;
     composeButton.disabled = true;
     listenButtonEl.disabled = true;
     composeButton.textContent = "Connecting...";
-    listenButtonEl.textContent = "Connecting..."; // FIX: Consistent loading state
+    listenButtonEl.textContent = "Connecting...";
+
+    // FIX: Add a timeout for the initial connection
+    authTimeout = setTimeout(() => {
+        if (!currentUser) {
+            console.warn("Authentication timed out.");
+            composeButton.textContent = "Connection Failed";
+            listenButtonEl.textContent = "Please Refresh";
+        }
+    }, CONFIG.CONNECTION_TIMEOUT_MS);
 
     onAuthStateChanged(auth, (user) => {
+        if (authTimeout) clearTimeout(authTimeout); // Clear the timeout on any auth state change
+
         if (user) {
             currentUser = user;
             user.getIdTokenResult(true).then((idTokenResult) => {
@@ -444,6 +499,8 @@ document.addEventListener('DOMContentLoaded', () => {
             signInAnonymously(auth).catch((error) => {
                 console.error("Anonymous authentication failed", error);
                 document.querySelector('.main-title').textContent = 'Connection Lost';
+                composeButton.textContent = "Connection Failed";
+                listenButtonEl.textContent = "Please Refresh";
             });
         }
     });

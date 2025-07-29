@@ -94,9 +94,11 @@ textarea:focus { outline: none; border-color: var(--void-glow); }
     color: var(--text-primary);
     font-size: 1.1rem;
     white-space: pre-wrap;
-    word-wrap: break-word;
     overflow: hidden;
     transform-origin: center center;
+    /* FIX: Ensure animator does not overflow on small screens */
+    max-width: 90vw;
+    word-wrap: break-word;
     /* FIX: Transition specific properties for better performance instead of 'all' */
     transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1),
                 height 0.6s cubic-bezier(0.4, 0, 0.2, 1),
