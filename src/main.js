@@ -290,17 +290,22 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Failed to release thought:", error);
             if (error.code === 'permission-denied') {
                 showFeedback('You are posting too frequently. Please wait.', 'error');
-                startCooldown();
+                startCooldown(); // This will also update the button state
             } else {
                 showFeedback('Your thought was lost in the ether. Please try again.', 'error');
-                updateCooldownDisplay();
             }
+            // FIX: Always reset button state on error.
+            updateCooldownDisplay();
         }
     }
 
     async function savePostToFirebase(content) {
         if (!currentUser) throw new Error("User not authenticated.");
+
+        // FIX: Use a single atomic batch to prevent race conditions.
         const postBatch = writeBatch(db);
+
+        // 1. Define the new post document.
         const postRef = doc(collection(db, 'public_posts'));
         const contentWords = content.toLowerCase().split(/\s+/).filter(Boolean);
         postBatch.set(postRef, {
@@ -309,11 +314,15 @@ document.addEventListener('DOMContentLoaded', () => {
             createdAt: serverTimestamp(),
             content_words: contentWords
         });
-        await postBatch.commit();
+
+        // 2. Define the user activity update.
         const userActivityRef = doc(db, 'user_activity', currentUser.uid);
-        await setDoc(userActivityRef, {
+        postBatch.set(userActivityRef, {
             lastPostTimestamp: serverTimestamp()
         }, { merge: true });
+
+        // 3. Commit both writes atomically.
+        await postBatch.commit();
     }
 
     async function handleListenToVoid() {
@@ -325,37 +334,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const seenIds = JSON.parse(localStorage.getItem('voidquill_seen_posts')) || [];
-            let foundPostDoc = null;
-            
-            const findUnseenPost = (snapshot) => {
-                if (snapshot.empty) return null;
-                const unseenDocs = snapshot.docs.filter(doc => !seenIds.includes(doc.id));
-                if (unseenDocs.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * unseenDocs.length);
-                    return unseenDocs[randomIndex];
-                }
-                return null;
-            };
-
             const postsRef = collection(db, 'public_posts');
-            const randomId = doc(postsRef).id;
+            const MAX_ATTEMPTS = 5; // Try multiple times to find a unique post.
+            let foundPostDoc = null;
 
-            const q1 = query(postsRef,
-                where('authorId', '!=', currentUser.uid),
-                where(documentId(), '>=', randomId),
-                limit(CONFIG.LISTEN_QUERY_LIMIT)
-            );
-            const snapshot1 = await getDocs(q1);
-            foundPostDoc = findUnseenPost(snapshot1);
-
-            if (!foundPostDoc) {
-                const q2 = query(postsRef,
-                    where('authorId', '!=', currentUser.uid),
-                    where(documentId(), '<', randomId),
-                    limit(CONFIG.LISTEN_QUERY_LIMIT)
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                const randomId = doc(postsRef).id;
+                const q = query(postsRef,
+                    where(documentId(), '>=', randomId),
+                    limit(CONFIG.LISTEN_QUERY_LIMIT * 2)
                 );
-                const snapshot2 = await getDocs(q2);
-                foundPostDoc = findUnseenPost(snapshot2);
+                const snapshot = await getDocs(q);
+
+                if (snapshot.empty) continue;
+
+                const eligibleDocs = snapshot.docs.filter(doc => {
+                    return doc.data().authorId !== currentUser.uid && !seenIds.includes(doc.id);
+                });
+
+                if (eligibleDocs.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * eligibleDocs.length);
+                    foundPostDoc = eligibleDocs[randomIndex];
+                    break;
+                }
             }
 
             if (foundPostDoc) {
@@ -368,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 localStorage.setItem('voidquill_seen_posts', JSON.stringify(seenIds));
             } else {
-                modalTextEl.textContent = "The void is silent. No other thoughts were found.";
+                modalTextEl.textContent = "The void is silent. No other thoughts were found, or you've seen them all recently.";
             }
         } catch (error) {
             console.error("An error occurred while listening to the void:", error);
@@ -415,7 +416,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- AUTHENTICATION (WITH LOADING STATE) ---
     composeButton.disabled = true;
     listenButtonEl.disabled = true;
-    composeButton.textContent = "Connecting..."; // Initial loading state
+    composeButton.textContent = "Connecting...";
+    listenButtonEl.textContent = "Connecting..."; // FIX: Consistent loading state
 
     onAuthStateChanged(auth, (user) => {
         if (user) {
@@ -429,14 +431,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 composeButton.disabled = false;
                 listenButtonEl.disabled = false;
-                composeButton.textContent = "Compose Thought"; // Restore text on success
+                composeButton.textContent = "Compose Thought";
+                listenButtonEl.textContent = "Listen to the Void";
             });
         } else {
             currentUser = null;
             isCurrentUserAdmin = false;
             composeButton.disabled = true;
             listenButtonEl.disabled = true;
-            composeButton.textContent = "Compose Thought"; // Restore text on logout/failure
+            composeButton.textContent = "Compose Thought";
+            listenButtonEl.textContent = "Listen to the Void";
             signInAnonymously(auth).catch((error) => {
                 console.error("Anonymous authentication failed", error);
                 document.querySelector('.main-title').textContent = 'Connection Lost';
