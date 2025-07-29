@@ -1,47 +1,64 @@
 /* src/main.css - Final Theme with Correct Layout */
 :root {
---bg-color: #04020a;
---void-purple: #9D4EDD;
---void-glow: #e0c3ff;
---text-primary: #f0e6ff;
---text-secondary: #a09abc;
---font-display: 'Orbitron', sans-serif;
+    --bg-color: #04020a;
+    --void-purple: #9D4EDD;
+    --void-glow: #e0c3ff;
+    --text-primary: #f0e6ff;
+    --text-secondary: #a09abc;
+    --font-display: 'Orbitron', sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-background-color: var(--bg-color);
-font-family: 'Inter', sans-serif;
-color: var(--text-primary);
-height: 100vh;
-overflow: hidden;
+    background-color: var(--bg-color);
+    font-family: 'Inter', sans-serif;
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
 }
 
 #blackhole-canvas {
-position: fixed; top: 0; left: 0;
-width: 100%; height: 100%;
-z-index: 1;
+    position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
 }
+
+/* --- Accessibility Helper --- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 
 /* --- Main Screen UI --- */
 .main-title {
-position: fixed; top: 0; left: 50%;
-transform: translateX(-50%);
-z-index: 5; padding: 2rem;
-font-family: var(--font-display); font-size: 2.5rem; color: #fff;
-text-shadow: 0 0 8px #fff, 0 0 15px var(--void-glow);
+    position: fixed; top: 0; left: 50%;
+    transform: translateX(-50%);
+    z-index: 5; padding: 2rem;
+    font-family: var(--font-display); font-size: 2.5rem; color: #fff;
+    text-shadow: 0 0 8px #fff, 0 0 15px var(--void-glow);
 }
 
 .main-action {
-position: fixed; bottom: 0; left: 50%;
-transform: translateX(-50%);
-z-index: 5; padding: 3rem;
+    position: fixed; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    z-index: 5; padding: 3rem;
+    display: flex;
+    gap: 1.5rem;
+    justify-content: center;
 }
 
 /* --- Button Styles --- */
 .btn { padding: 0.85rem 1.75rem; font-size: 1rem; font-weight: 600; font-family: var(--font-display); border-radius: 8px; cursor: pointer; transition: all 0.2s ease; backdrop-filter: blur(2px); border: 1px solid transparent; }
-.btn-hero { padding: 1rem 2.5rem; font-size: 1.2rem; }
+.btn-hero { padding: 1rem 2rem; font-size: 1.1rem; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn-primary { background: var(--void-purple); color: #fff; border-color: var(--void-purple); box-shadow: 0 0 10px 2px var(--void-purple); }
 .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 20px 4px var(--void-purple); }
@@ -63,7 +80,7 @@ textarea { width: 100%; background-color: transparent; color: var(--text-primary
 textarea:focus { outline: none; border-color: var(--void-glow); }
 .feedback { min-height: 20px; font-size: 0.9rem; margin-top: 0.75rem; font-weight: 600; }
 .feedback.success { color: #03dac6; } .feedback.error { color: #cf6679; }
-.button-group { display: flex; justify-content: space-between; gap: 1rem; }
+.button-group { display: flex; justify-content: center; }
 .modal-text { font-size: 1.2rem; line-height: 1.7; color: var(--text-primary); white-space: pre-wrap; }
 
 /* --- CSS for the DOM-based Release Animation --- */
@@ -79,7 +96,7 @@ textarea:focus { outline: none; border-color: var(--void-glow); }
     white-space: pre-wrap;
     word-wrap: break-word;
     overflow: hidden;
-    transform: translateX(-50%);
-    /* Shorter, simpler transition as its life is short */
-    transition: all 0.5s ease-in-out;
+    transform-origin: center center;
+    /* ANIMATION FIX: Animate all properties for a smooth shrink effect. */
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
