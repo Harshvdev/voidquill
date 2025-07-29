@@ -11,42 +11,47 @@
 </head>
 <body>
 
-<canvas id="blackhole-canvas"></canvas>
+<div id="app-container">
+    <canvas id="blackhole-canvas"></canvas>
 
-<!-- Main screen UI -->
-<h1 class="main-title">VoidQuill</h1>
-<div class="main-action">
-    <button id="compose-button" class="btn btn-primary btn-hero">Compose Thought</button>
+    <!-- Main screen UI -->
+    <h1 class="main-title">VoidQuill</h1>
+    <div class="main-action">
+        <button id="compose-button" class="btn btn-primary btn-hero">Compose Thought</button>
+        <button id="listen-button" class="btn btn-secondary btn-hero">Listen to the Void</button>
+    </div>
 </div>
 
 <!-- Modal for writing the post -->
-<div id="compose-modal" class="modal-overlay">
+<div id="compose-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="compose-modal-title">
     <div class="modal-content">
         <button id="compose-close-button" class="modal-close" aria-label="Close">×</button>
-        <h2>Whisper to the singularity...</h2>
+        <h2 id="compose-modal-title">Whisper to the singularity...</h2>
         <div class="input-area">
             <textarea
                 id="post-content"
                 rows="6"
                 aria-label="Your message to the void"
             ></textarea>
-            <div id="feedback-message" class="feedback"></div>
+            <!-- ACCESSIBILITY FIX: aria-live tells screen readers to announce changes -->
+            <div id="feedback-message" class="feedback" aria-live="assertive"></div>
         </div>
         <div class="button-group">
             <button id="release-button" class="btn btn-primary">Release into the Void</button>
-            <button id="listen-button" class="btn btn-secondary">Listen to the Void</button>
         </div>
     </div>
 </div>
 
 <!-- Modal for displaying a post from the void -->
-<div id="post-modal" class="modal-overlay">
+<div id="post-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="post-modal-title">
     <div class="modal-content">
         <button id="modal-close-button" class="modal-close" aria-label="Close modal">×</button>
+        <h2 id="post-modal-title" class="visually-hidden">A thought from the void</h2>
         <p class="modal-text"></p>
     </div>
 </div>
 
+<!-- MODULARIZATION FIX: Point to the new main entry script -->
 <script type="module" src="src/main.js"></script>
 
 </body>
