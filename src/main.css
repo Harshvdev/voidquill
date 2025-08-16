@@ -65,13 +65,44 @@ body {
 .btn-secondary { background: rgba(10, 2, 20, 0.5); color: var(--text-secondary); border-color: rgba(157, 78, 221, 0.6); }
 .btn-secondary:hover:not(:disabled) { color: var(--text-primary); border-color: var(--void-glow); background: rgba(157, 78, 221, 0.1); }
 
+/* --- Animation Toggle Button --- */
+.btn-toggle-anim {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 100;
+    width: 44px;
+    height: 44px;
+    background: rgba(10, 2, 20, 0.5);
+    border: 1px solid rgba(157, 78, 221, 0.6);
+    color: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(2px);
+    transition: all 0.2s ease;
+}
+/* FIX: New hover effect */
+.btn-toggle-anim:hover {
+    border-color: var(--void-glow);
+    transform: scale(1.1);
+    box-shadow: 0 0 8px var(--void-glow);
+}
+
 /* --- Modal Styles --- */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; backdrop-filter: blur(8px); }
 .modal-overlay.is-visible { opacity: 1; visibility: visible; }
 .modal-content { position: relative; background-color: rgba(10, 2, 20, 0.8); border: 1px solid var(--void-purple); padding: 2rem; border-radius: 12px; width: 90%; max-width: 550px; box-shadow: 0 0 30px 5px rgba(157, 78, 221, 0.2); transform: scale(0.95); transition: transform 0.3s ease; }
 .modal-overlay.is-visible .modal-content { transform: scale(1); }
 .modal-close { position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--text-secondary); font-size: 2.5rem; cursor: pointer; line-height: 1; transition: color 0.2s, transform 0.2s; }
-.modal-close:hover { color: var(--void-glow); transform: rotate(90deg); }
+/* FIX: New hover effect */
+.modal-close:hover { 
+    color: var(--void-glow); 
+    transform: scale(1.1);
+}
 
 /* --- Compose Modal Specifics --- */
 .modal-content h2 { font-family: var(--font-display); font-weight: 400; margin-bottom: 1.5rem; color: var(--text-secondary); }
@@ -94,12 +125,10 @@ textarea:focus { outline: none; border-color: var(--void-glow); }
     color: var(--text-primary);
     font-size: 1.1rem;
     white-space: pre-wrap;
-    overflow: hidden;
-    transform-origin: center center;
-    /* FIX: Ensure animator does not overflow on small screens */
     max-width: 90vw;
     word-wrap: break-word;
-    /* FIX: Transition specific properties for better performance instead of 'all' */
+    overflow: hidden;
+    transform-origin: center center;
     transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1),
                 height 0.6s cubic-bezier(0.4, 0, 0.2, 1),
                 border-radius 0.6s cubic-bezier(0.4, 0, 0.2, 1),
@@ -111,46 +140,14 @@ textarea:focus { outline: none; border-color: var(--void-glow); }
 
 /* --- Responsive Adjustments for Mobile Devices --- */
 @media (max-width: 768px) {
-
-    .main-title {
-        font-size: 2rem;
-        padding: 1.5rem;
-    }
-
+    .main-title { font-size: 2rem; padding: 1.5rem; }
     .main-action {
-        width: 100%;
-        left: 0;
-        transform: none;
-
-        /*
-        -- FIX FOR MOBILE LAYOUT --
-        Using a smaller vh unit for padding is more robust than a large
-        `bottom` offset, preventing the buttons from floating too high
-        on certain screen aspect ratios.
-        */
-        bottom: 0;
-        padding-bottom: 5vh;
-
-        padding-left: 1rem;
-        padding-right: 1rem;
-        justify-content: center;
-        gap: 1rem;
+        width: 100%; left: 0; transform: none; bottom: 0;
+        padding-bottom: 5vh; padding-left: 1rem; padding-right: 1rem;
+        justify-content: center; gap: 1rem;
     }
-
-    .btn-hero {
-        padding: 0.9rem 1.25rem;
-        font-size: 1rem;
-    }
-
-    .modal-content {
-        padding: 1.5rem;
-    }
-
-    .modal-content h2 {
-        margin-bottom: 1rem;
-    }
-
-    .modal-text {
-        font-size: 1.1rem;
-    }
+    .btn-hero { padding: 0.9rem 1.25rem; font-size: 1rem; }
+    .modal-content { padding: 1.5rem; }
+    .modal-content h2 { margin-bottom: 1rem; }
+    .modal-text { font-size: 1.1rem; }
 }

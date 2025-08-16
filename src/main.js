@@ -17,7 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
         RELEASE_ANIMATION_DURATION_MS: 600,
         LISTEN_QUERY_LIMIT: 15,
         SEEN_POSTS_HISTORY_LENGTH: 10,
-        // FIX: Centralize "magic numbers" for animator positioning
         ANIMATOR_HEIGHT: 150,
         ANIMATOR_SPACING: 20,
         CONNECTION_TIMEOUT_MS: 15000,
@@ -37,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalTextEl = postModal.querySelector('.modal-text');
     const modalCloseButton = document.getElementById('modal-close-button');
     const mainActionContainer = document.querySelector('.main-action');
+    const toggleAnimationButton = document.getElementById('toggle-animation-button');
 
     // --- STATE AND CONFIG ---
     let currentUser = null;
@@ -51,9 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let cooldownEndTime = 0;
     let dustGradient = null;
     let thoughtGradient = null;
-    let elementToFocusOnClose = null; // For accessibility
-    // FIX: State for motion sensitivity
-    let prefersReducedMotion = false;
+    let elementToFocusOnClose = null; 
+    let animationEnabled = true;
 
     // --- HELPER FUNCTION ---
     const lerp = (a, b, t) => a * (1 - t) + b * t;
@@ -105,20 +104,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     class Particle {
         constructor(orbitRadius, orbitAngle) {
-            const speedMultiplier = prefersReducedMotion ? 0.1 : 1;
             this.radius = orbitRadius; this.angle = orbitAngle; this.isUserThought = !!orbitRadius;
-            if (!this.isUserThought) { this.reset(speedMultiplier); }
-            this.angularSpeed = (2 / this.radius) * speedMultiplier;
-            this.speed = 0.4 * speedMultiplier;
+            if (!this.isUserThought) { this.reset(); }
+            this.angularSpeed = 2 / this.radius;
+            this.speed = 0.4;
             this.size = this.isUserThought ? 8 : Math.random() * 4 + 2;
             this.gradient = this.isUserThought ? thoughtGradient : dustGradient;
             this.x = centerX + Math.cos(this.angle) * this.radius;
             this.y = centerY + Math.sin(this.angle) * this.radius * 0.4;
         }
-        reset(speedMultiplier = 1) {
+        reset() {
             this.radius = Math.random() * (canvas.width * 0.5) + (canvas.width * 0.2);
             this.angle = Math.random() * Math.PI * 2;
-            this.angularSpeed = (2 / this.radius) * speedMultiplier;
+            this.angularSpeed = 2 / this.radius;
         }
         update() {
             this.radius -= this.speed; this.angle += this.angularSpeed;
@@ -138,15 +136,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- CANVAS & ANIMATION ---
-    function setupCanvas() {
-        // FIX: Check for prefers-reduced-motion
-        prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (prefersReducedMotion) {
-            console.log("Reduced motion is enabled. Simplifying animations.");
-            CONFIG.PARTICLE_COUNT /= 4; // Use fewer particles
-            CONFIG.STAR_COUNT /= 2;
+    function initializeAnimationState() {
+        const osPrefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const userOverride = localStorage.getItem('voidquill_animation_override');
+
+        if (userOverride === 'true') {
+            animationEnabled = true;
+        } else if (userOverride === 'false') {
+            animationEnabled = false;
+        } else {
+            animationEnabled = !osPrefersReduced;
         }
 
+        particles = [];
+        transitionParticles = [];
+        if (animationEnabled) {
+            for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) particles.push(new Particle());
+        }
+    }
+
+    function setupCanvas() {
         canvas.width = window.innerWidth; canvas.height = window.innerHeight;
         centerX = canvas.width / 2; centerY = canvas.height * CONFIG.CANVAS_VERTICAL_CENTER_RATIO;
         const thoughtSize = 8;
@@ -161,8 +170,8 @@ document.addEventListener('DOMContentLoaded', () => {
         dustGradient.addColorStop(1, 'rgba(157, 78, 221, 0)');
         stars = [];
         for (let i = 0; i < CONFIG.STAR_COUNT; i++) stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * 1.5, opacity: Math.random() * 0.5 + 0.1 });
-        particles = [];
-        for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) particles.push(new Particle());
+        
+        initializeAnimationState();
     }
 
     function animate() {
@@ -174,29 +183,28 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`;
             ctx.fillRect(star.x, star.y, star.size, star.size);
         });
-
-        // FIX: Disable intense glow effect if motion is reduced
-        if (!prefersReducedMotion) {
-            ctx.globalCompositeOperation = 'lighter';
-        }
         
-        for (let i = particles.length - 1; i >= 0; i--) {
-            const p = particles[i];
-            if (!p.update()) {
-                particles.splice(i, 1);
-            } else {
-                p.draw();
+        if (animationEnabled) {
+            ctx.globalCompositeOperation = 'lighter';
+            
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                if (!p.update()) {
+                    particles.splice(i, 1);
+                } else {
+                    p.draw();
+                }
             }
-        }
 
-        for (let i = transitionParticles.length - 1; i >= 0; i--) {
-            const tp = transitionParticles[i];
-            const result = tp.update();
-            if (result.done) {
-                particles.push(new Particle(result.radius, result.angle));
-                transitionParticles.splice(i, 1);
-            } else {
-                tp.draw();
+            for (let i = transitionParticles.length - 1; i >= 0; i--) {
+                const tp = transitionParticles[i];
+                const result = tp.update();
+                if (result.done) {
+                    particles.push(new Particle(result.radius, result.angle));
+                    transitionParticles.splice(i, 1);
+                } else {
+                    tp.draw();
+                }
             }
         }
 
@@ -208,11 +216,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         requestAnimationFrame(animate);
     }
-
+    
     // --- INITIALIZATION ---
     setupCanvas();
     animate();
     window.addEventListener('resize', setupCanvas);
+    toggleAnimationButton.addEventListener('click', () => {
+        // Toggle the current state and save it as the override
+        animationEnabled = !animationEnabled;
+        localStorage.setItem('voidquill_animation_override', animationEnabled);
+        initializeAnimationState();
+    });
 
     // --- FRONT-END COOLDOWN LOGIC (ADMIN AWARE) ---
     function updateCooldownDisplay() {
@@ -231,9 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     function startCooldown() {
-        if (isCurrentUserAdmin) {
-            return;
-        }
+        if (isCurrentUserAdmin) return;
         cooldownEndTime = Date.now() + CONFIG.POST_COOLDOWN_SECONDS * 1000;
         if (cooldownInterval) clearInterval(cooldownInterval);
         cooldownInterval = setInterval(updateCooldownDisplay, 1000);
@@ -243,58 +255,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- ACCESSIBILITY: FOCUS TRAPPING FOR MODALS ---
     const trapFocus = (e) => {
         if (e.key !== 'Tab') return;
-
         const modal = e.currentTarget;
         const focusableElements = Array.from(
-            modal.querySelectorAll(
-                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-            )
+            modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
         ).filter(el => el.offsetParent !== null); 
-        
         const firstElement = focusableElements[0];
         const lastElement = focusableElements[focusableElements.length - 1];
-
         if (e.shiftKey) { 
-            if (document.activeElement === firstElement) {
-                lastElement.focus();
-                e.preventDefault();
-            }
+            if (document.activeElement === firstElement) { lastElement.focus(); e.preventDefault(); }
         } else { 
-            if (document.activeElement === lastElement) {
-                firstElement.focus();
-                e.preventDefault();
-            }
+            if (document.activeElement === lastElement) { firstElement.focus(); e.preventDefault(); }
         }
     };
 
     // --- MODAL CONTROLS (WITH ACCESSIBILITY) ---
-    const openComposeModal = () => {
-        elementToFocusOnClose = document.activeElement; 
-        composeModal.classList.add('is-visible');
-        composeModal.addEventListener('keydown', trapFocus);
-        postContentEl.focus();
-        updateCooldownDisplay();
-    };
-
-    const closeComposeModal = () => {
-        composeModal.classList.remove('is-visible');
-        composeModal.removeEventListener('keydown', trapFocus);
-        if (elementToFocusOnClose) elementToFocusOnClose.focus();
-    };
-
-    const openListenModal = () => {
-        elementToFocusOnClose = document.activeElement;
-        postModal.classList.add('is-visible');
-        postModal.addEventListener('keydown', trapFocus);
-        modalCloseButton.focus();
-    };
-
-    const closeListenModal = () => {
-        postModal.classList.remove('is-visible');
-        postModal.removeEventListener('keydown', trapFocus);
-        if (elementToFocusOnClose) elementToFocusOnClose.focus();
-    };
-
+    const openComposeModal = () => { elementToFocusOnClose = document.activeElement; composeModal.classList.add('is-visible'); composeModal.addEventListener('keydown', trapFocus); postContentEl.focus(); updateCooldownDisplay(); };
+    const closeComposeModal = () => { composeModal.classList.remove('is-visible'); composeModal.removeEventListener('keydown', trapFocus); if (elementToFocusOnClose) elementToFocusOnClose.focus(); };
+    const openListenModal = () => { elementToFocusOnClose = document.activeElement; postModal.classList.add('is-visible'); postModal.addEventListener('keydown', trapFocus); modalCloseButton.focus(); };
+    const closeListenModal = () => { postModal.classList.remove('is-visible'); postModal.removeEventListener('keydown', trapFocus); if (elementToFocusOnClose) elementToFocusOnClose.focus(); };
 
     // --- CORE APP LOGIC ---
     async function handleReleasePost() {
@@ -305,7 +283,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         releaseButtonEl.disabled = true;
         releaseButtonEl.textContent = 'Releasing...';
-
         try {
             await savePostToFirebase(content);
             postContentEl.value = '';
@@ -313,15 +290,13 @@ document.addEventListener('DOMContentLoaded', () => {
             closeComposeModal();
             const animator = document.createElement('div');
             animator.className = 'release-animator';
-            // FIX: Use CONFIG values for positioning and styling
-            animator.style.width = '350px'; // CSS handles max-width
+            animator.style.width = '350px';
             animator.style.height = `${CONFIG.ANIMATOR_HEIGHT}px`;
             animator.style.left = '50%';
             animator.style.top = `${actionRect.top - CONFIG.ANIMATOR_HEIGHT - CONFIG.ANIMATOR_SPACING}px`;
             animator.style.transform = 'translateX(-50%)';
             animator.textContent = content;
             document.body.appendChild(animator);
-
             setTimeout(() => {
                 animator.style.width = '10px'; animator.style.height = '10px'; animator.style.borderRadius = '50%';
                 animator.style.color = 'transparent'; animator.style.padding = '0';
@@ -330,177 +305,91 @@ document.addEventListener('DOMContentLoaded', () => {
                     const finalRect = animator.getBoundingClientRect();
                     const startX = finalRect.left + finalRect.width / 2;
                     const startY = finalRect.top + finalRect.height / 2;
-                    transitionParticles.push(new TransitionParticle(startX, startY));
+                    if (animationEnabled) {
+                        transitionParticles.push(new TransitionParticle(startX, startY));
+                    }
                     animator.remove();
                 }, CONFIG.RELEASE_ANIMATION_DURATION_MS);
             }, 100);
             startCooldown();
         } catch (error) {
             console.error("Failed to release thought:", error);
-            if (error.code === 'permission-denied') {
-                showFeedback('You are posting too frequently. Please wait.', 'error');
-                startCooldown(); 
-            } else {
-                showFeedback('Your thought was lost in the ether. Please try again.', 'error');
-            }
+            if (error.code === 'permission-denied') { showFeedback('You are posting too frequently. Please wait.', 'error'); startCooldown(); } 
+            else { showFeedback('Your thought was lost in the ether. Please try again.', 'error'); }
             updateCooldownDisplay();
         }
     }
-
     async function savePostToFirebase(content) {
         if (!currentUser) throw new Error("User not authenticated.");
-
         const postBatch = writeBatch(db);
         const postRef = doc(collection(db, 'public_posts'));
         const contentWords = content.toLowerCase().split(/\s+/).filter(Boolean);
-        postBatch.set(postRef, {
-            content,
-            authorId: currentUser.uid,
-            createdAt: serverTimestamp(),
-            content_words: contentWords
-        });
-
+        postBatch.set(postRef, { content, authorId: currentUser.uid, createdAt: serverTimestamp(), content_words: contentWords });
         const userActivityRef = doc(db, 'user_activity', currentUser.uid);
-        postBatch.set(userActivityRef, {
-            lastPostTimestamp: serverTimestamp()
-        }, { merge: true });
-
+        postBatch.set(userActivityRef, { lastPostTimestamp: serverTimestamp() }, { merge: true });
         await postBatch.commit();
     }
-
     async function handleListenToVoid() {
         if (!currentUser) return;
-        listenButtonEl.disabled = true;
-        listenButtonEl.textContent = 'Listening...';
-        modalTextEl.textContent = 'The void is vast...';
-        openListenModal();
-
+        listenButtonEl.disabled = true; listenButtonEl.textContent = 'Listening...';
+        modalTextEl.textContent = 'The void is vast...'; openListenModal();
         try {
             const seenIds = JSON.parse(localStorage.getItem('voidquill_seen_posts')) || [];
-            const postsRef = collection(db, 'public_posts');
-            const MAX_ATTEMPTS = 5;
-            let foundPostDoc = null;
-
+            const postsRef = collection(db, 'public_posts'); const MAX_ATTEMPTS = 5; let foundPostDoc = null;
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
                 const randomId = doc(postsRef).id;
-                const q = query(postsRef,
-                    where(documentId(), '>=', randomId),
-                    limit(CONFIG.LISTEN_QUERY_LIMIT * 2)
-                );
+                const q = query(postsRef, where(documentId(), '>=', randomId), limit(CONFIG.LISTEN_QUERY_LIMIT * 2));
                 const snapshot = await getDocs(q);
-
                 if (snapshot.empty) continue;
-
-                const eligibleDocs = snapshot.docs.filter(doc => {
-                    return doc.data().authorId !== currentUser.uid && !seenIds.includes(doc.id);
-                });
-
-                if (eligibleDocs.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * eligibleDocs.length);
-                    foundPostDoc = eligibleDocs[randomIndex];
-                    break;
-                }
+                const eligibleDocs = snapshot.docs.filter(doc => doc.data().authorId !== currentUser.uid && !seenIds.includes(doc.id));
+                if (eligibleDocs.length > 0) { const randomIndex = Math.floor(Math.random() * eligibleDocs.length); foundPostDoc = eligibleDocs[randomIndex]; break; }
             }
-
             if (foundPostDoc) {
-                const foundPostContent = foundPostDoc.data().content;
-                const foundPostId = foundPostDoc.id;
-                modalTextEl.textContent = foundPostContent;
-                seenIds.push(foundPostId);
-                while (seenIds.length > CONFIG.SEEN_POSTS_HISTORY_LENGTH) {
-                    seenIds.shift();
-                }
+                const foundPostContent = foundPostDoc.data().content; const foundPostId = foundPostDoc.id;
+                modalTextEl.textContent = foundPostContent; seenIds.push(foundPostId);
+                while (seenIds.length > CONFIG.SEEN_POSTS_HISTORY_LENGTH) { seenIds.shift(); }
                 localStorage.setItem('voidquill_seen_posts', JSON.stringify(seenIds));
-            } else {
-                modalTextEl.textContent = "The void is silent. No other thoughts were found, or you've seen them all recently.";
-            }
-        } catch (error) {
-            console.error("An error occurred while listening to the void:", error);
-            modalTextEl.textContent = "A cosmic interference prevented listening. Please try again.";
-        } finally {
-            listenButtonEl.disabled = false;
-            listenButtonEl.textContent = 'Listen to the Void';
-        }
+            } else { modalTextEl.textContent = "The void is silent. No other thoughts were found, or you've seen them all recently."; }
+        } catch (error) { console.error("An error occurred while listening to the void:", error); modalTextEl.textContent = "A cosmic interference prevented listening. Please try again.";
+        } finally { listenButtonEl.disabled = false; listenButtonEl.textContent = 'Listen to the Void'; }
     }
-
     // --- EVENT LISTENERS ---
     composeButton.addEventListener('click', openComposeModal);
     composeCloseButton.addEventListener('click', closeComposeModal);
-    composeModal.addEventListener('click', (e) => {
-        if (e.target === composeModal) closeComposeModal();
-    });
+    composeModal.addEventListener('click', (e) => { if (e.target === composeModal) closeComposeModal(); });
     releaseButtonEl.addEventListener('click', handleReleasePost);
     listenButtonEl.addEventListener('click', handleListenToVoid);
     modalCloseButton.addEventListener('click', closeListenModal);
-    postModal.addEventListener('click', (e) => {
-        if (e.target === postModal) closeListenModal();
-    });
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            closeComposeModal();
-            closeListenModal();
-        }
-    });
-
+    postModal.addEventListener('click', (e) => { if (e.target === postModal) closeListenModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeComposeModal(); closeListenModal(); } });
     // --- HELPER FUNCTIONS ---
-    function showFeedback(message, type) {
-        feedbackMessageEl.textContent = message;
-        feedbackMessageEl.className = `feedback ${type}`;
-        setTimeout(() => {
-            feedbackMessageEl.textContent = '';
-            feedbackMessageEl.className = 'feedback';
-        }, 4000);
-    }
-    function isTextClean(text) {
-        const lowerCaseText = text.toLowerCase();
-        return !blocklist.some(word => lowerCaseText.includes(word));
-    }
-
+    function showFeedback(message, type) { feedbackMessageEl.textContent = message; feedbackMessageEl.className = `feedback ${type}`; setTimeout(() => { feedbackMessageEl.textContent = ''; feedbackMessageEl.className = 'feedback'; }, 4000); }
+    function isTextClean(text) { const lowerCaseText = text.toLowerCase(); return !blocklist.some(word => lowerCaseText.includes(word)); }
     // --- AUTHENTICATION (WITH LOADING STATE) ---
     let authTimeout = null;
-    composeButton.disabled = true;
-    listenButtonEl.disabled = true;
-    composeButton.textContent = "Connecting...";
-    listenButtonEl.textContent = "Connecting...";
-
-    // FIX: Add a timeout for the initial connection
+    composeButton.disabled = true; listenButtonEl.disabled = true;
+    composeButton.textContent = "Connecting..."; listenButtonEl.textContent = "Connecting...";
     authTimeout = setTimeout(() => {
-        if (!currentUser) {
-            console.warn("Authentication timed out.");
-            composeButton.textContent = "Connection Failed";
-            listenButtonEl.textContent = "Please Refresh";
-        }
+        if (!currentUser) { console.warn("Authentication timed out."); composeButton.textContent = "Connection Failed"; listenButtonEl.textContent = "Please Refresh"; }
     }, CONFIG.CONNECTION_TIMEOUT_MS);
-
     onAuthStateChanged(auth, (user) => {
-        if (authTimeout) clearTimeout(authTimeout); // Clear the timeout on any auth state change
-
+        if (authTimeout) clearTimeout(authTimeout);
         if (user) {
             currentUser = user;
             user.getIdTokenResult(true).then((idTokenResult) => {
                 isCurrentUserAdmin = !!idTokenResult.claims.admin;
-
-                if (isCurrentUserAdmin) {
-                    console.log("Admin user detected. UI cooldown will be disabled.");
-                }
-
-                composeButton.disabled = false;
-                listenButtonEl.disabled = false;
-                composeButton.textContent = "Compose Thought";
-                listenButtonEl.textContent = "Listen to the Void";
+                if (isCurrentUserAdmin) { console.log("Admin user detected. UI cooldown will be disabled."); }
+                composeButton.disabled = false; listenButtonEl.disabled = false;
+                composeButton.textContent = "Compose Thought"; listenButtonEl.textContent = "Listen to the Void";
             });
         } else {
-            currentUser = null;
-            isCurrentUserAdmin = false;
-            composeButton.disabled = true;
-            listenButtonEl.disabled = true;
-            composeButton.textContent = "Compose Thought";
-            listenButtonEl.textContent = "Listen to the Void";
+            currentUser = null; isCurrentUserAdmin = false;
+            composeButton.disabled = true; listenButtonEl.disabled = true;
+            composeButton.textContent = "Compose Thought"; listenButtonEl.textContent = "Listen to the Void";
             signInAnonymously(auth).catch((error) => {
                 console.error("Anonymous authentication failed", error);
                 document.querySelector('.main-title').textContent = 'Connection Lost';
-                composeButton.textContent = "Connection Failed";
-                listenButtonEl.textContent = "Please Refresh";
+                composeButton.textContent = "Connection Failed"; listenButtonEl.textContent = "Please Refresh";
             });
         }
     });
